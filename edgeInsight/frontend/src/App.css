@@ -1,0 +1,86 @@
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    height: 40vmin;
+    pointer-events: none;
+  }
+}
+
+.App-header {
+  background-color: #f2f2f2; /* Light grey */
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: rgb(31, 28, 28);
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+.row {
+  /* ... other styles ... */
+  padding-bottom: 20px; /* Add some padding at the bottom */
+}
+
+.container {
+  background-color: white;
+  box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+  width: 80%;
+  margin: auto;
+  padding: 20px;
+  font-family: 'Roboto', sans-serif;
+  font-size: 16px;
+  color: #333333; 
+  padding-bottom: 20px; /* Add some padding at the bottom */ 
+}
+
+.remove-button {
+  background-color: rgb(241, 237, 237);
+  color: white;
+  padding: 0 5px;
+  border: 2px solid black; /* Add a square border */
+  border-radius: 5px; /* Add a rounded radius */
+  border: none;
+  cursor: pointer;
+  outline: 2px solid lightgray; /* Add an outline */
+  margin-right: 5px; /* Add some distance to the right of the button */
+  height: 20px; /* Adjust the height of the button */
+  line-height: 20px; /* Center the text vertically */
+  position: relative;
+  top: -5px; /* Offset the button upwards */
+}
+
+.selected-fields {
+  margin-top: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  border: 2px solid rgba(63, 58, 58, 0.218); /* Add a border */
+  border-radius: 6px; /* Add rounded edges */
+  padding: 10px; /* Add some padding */
+}
+
+#field-select {
+  width: 100%; /* Make the select element take up the full width of its container */
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
