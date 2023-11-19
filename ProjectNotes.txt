@@ -1,0 +1,443 @@
+mosquitto notes
+/how to setup a password password_file
+> mosquitto_passwd -c /mosquitto/config/passwordfile user
+
+log in to the mosquitto container with: 
+    docker exec -it mosquitto /bin/sh
+
+for node red, we use: 
+    mosquitto_passwd -c /mosquitto/config/passwordfile node_red {on prompt: password Hello@123}
+
+Then add to mosquitto.conf the following:
+    allow_anonymous false
+    password_file /mosquitto/config/passwordfile
+    log_type all  (collect lots of logs)
+    listener 1883 (sets mosquitto to listen outside of container)
+
+
+Influxdb setup
+Log into Influx:    docker exec -it influxdb influx
+Create Database:    CREATE DATABASE mydb (Created remoteGen for that device type, would repeat for others)
+Set Retention:      CREATE RETENTION POLICY one_week ON mydb DURATION 7d REPLICATION 1 DEFAULT
+
+** Need to figure out how to have influx maintain its configuration between up / down operations
+
+Influx
+    login: admin
+    password: Hello@123
+    API Token: LiF0W3X5hOeCdCS_HXojIFEgCVLJMHbrtaWQTHlnLIht4QawUvCKdu9KjsaKrHlpJTIH0a-R902KkR2n8PowPQ==
+    node_red Token: GcZC-ANUV0qRxYPV2IZlQ4_DJJxQxXEElqWHU_4eNnFDW9bN2KlSxEn-wtPkgF-ntHzgsR9yYm2WyvRxFRNgXQ==
+
+    interestingly, the docker-compose.yml file needed the following update under volumes for local storage;
+        volumes:
+      - ./influxdb_data:/var/lib/influxdb2
+
+Grafana
+    login: admin
+    password: Hello@123
+
+    To set up connectivity with influxdb, I needed to use the Flux query language, then I could use the node_red token 
+    for access ... this worked great
+
+    And, to set up a query, I went to influx to set up a query, and then copied via script editor to grafana.
+
+    Also  
+
+
+Steps after docker up:
+    log in to influx - set user pword, then set Token
+    update node red with Token
+    update grafana with Token
+
+
+
+==============
+
+Node.js Application
+
+Initial Design:
+
+/my-app
+|-- /backend
+|   |-- server.js
+|   |-- /routes
+|   |   |-- data.js
+|   |-- /controllers
+|   |   |-- dataController.js
+|   |-- /models
+|   |   |-- dataModel.js
+|   |-- package.json
+|   |-- package-lock.json
+|   |-- /node_modules
+|
+|-- /frontend
+|   |-- /public
+|   |   |-- index.html
+|   |-- /src
+|   |   |-- index.js
+|   |   |-- App.js
+|   |   |-- /components
+|   |   |   |-- MyComponent.js
+|   |   |-- /services
+|   |   |   |-- dataService.js
+|   |-- package.json
+|   |-- package-lock.json
+|   |-- /node_modules
+|
+|-- docker-compose.yml - REVISIT THIS to add frontend & backend to existing .yml file
+
+In this structure:
+
+my-app is the root directory of your application.
+backend is where your Node.js server lives. It includes:
+    server.js: The entry point to your server.
+    routes: This directory contains your Express routes.
+    controllers: This directory contains your controller functions, which handle requests and responses.
+    models: This directory contains your data models, if you're using a database with a schema.
+
+    backend/routes/data.js: This file will handle routing for data-related requests.
+    backend/controllers/dataController.js: This file will contain the logic for handling data-related requests and responses.
+    backend/models/dataModel.js: This file will define the structure of your data.
+    frontend/src/components/MyComponent.js: This file contains your MyComponent component.
+    frontend/src/services/dataService.js: This file will handle fetching data from your backend.
+
+frontend is where your React application lives. It includes:
+    App.js: The entry point to your React application.
+
+Backend:
+
+First, install the necessary dependencies:
+    npm install express influx
+
+Then, set up your server (using tokens and flux queries):
+    
+const express = require('express');
+const { InfluxDB } = require('@influxdata/influxdb-client');
+const app = express();
+const port = 3001;
+
+const token = 'Your-InfluxDB-Token';
+const org = 'Your-InfluxDB-Org';
+const bucket = 'Your-InfluxDB-Bucket';
+
+const client = new InfluxDB({ url: 'http://localhost:8086', token: token });
+
+app.get('/data', async (req, res) => {
+  const queryApi = client.getQueryApi(org);
+  const fluxQuery = `
+    from(bucket: "${bucket}")
+      |> range(start: -1h)
+      |> filter(fn: (r) => r._measurement == "voltage" or r._measurement == "current" or r._measurement == "rpm" or r._measurement == "temperature")
+  `;
+
+  try {
+    const result = await queryApi.collectRows(fluxQuery);
+    res.json(result);
+  } catch (error) {
+    console.error(`Error querying data from InfluxDB! ${error.stack}`);
+    res.status(500).send('Error querying data from InfluxDB!');
+  }
+});
+
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
+});
+
+This code uses the @influxdata/influxdb-client package to connect to InfluxDB 2.0 and the Flux query language to query the 'voltage', 'current', 'rpm', and 'temperature' measurements from your InfluxDB.
+
+Next steps:
+
+Install the @influxdata/influxdb-client package with npm install @influxdata/influxdb-client
+Replace 'Your-InfluxDB-Token', 'Your-InfluxDB-Org', and 'Your-InfluxDB-Bucket' in the server code with your actual InfluxDB token, organization, and bucket
+Run your server with node server.js (or whatever you named your file)
+Test the '/data' endpoint with a tool like curl or Postman to ensure it's working correctly
+Continue developing your Node.js server and React dashboard.
+
+Use the axios library to fetch data from your server in your React component. Here's an example using the useState and useEffect hooks:
+
+
+First, install axios:
+        npm install axios
+
+Then, in your React component:
+
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+
+const MyComponent = () => {
+  const [data, setData] = useState([]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const result = await axios.get('http://localhost:3001/data');
+      setData(result.data);
+    };
+
+    fetchData();
+  }, []);
+
+  return (
+    <LineChart
+      width={500}
+      height={300}
+      data={data}
+      margin={{
+        top: 5, right: 30, left: 20, bottom: 5,
+      }}
+    >
+      <CartesianGrid strokeDasharray="3 3" />
+      <XAxis dataKey="name" />
+      <YAxis yAxisId="left" orientation="left" stroke="#8884d8"/>
+      <YAxis yAxisId="right" orientation="right" stroke="#82ca9d"/>
+      <Tooltip />
+      <Legend />
+      <Line yAxisId="left" type="monotone" dataKey="voltage" stroke="#8884d8" activeDot={{ r: 8 }} />
+      <Line yAxisId="right" type="monotone" dataKey="current" stroke="#82ca9d" />
+      <Line yAxisId="left" type="monotone" dataKey="rpm" stroke="#ffc658" />
+      <Line yAxisId="right" type="monotone" dataKey="temperature" stroke="#ff7300" />
+    </LineChart>
+  );
+};
+
+export default MyComponent;
+
+In this example, the 'voltage' and 'rpm' measurements are plotted against the left Y-axis, and the 'current' and 'temperature' measurements are plotted against the right Y-axis.
+
+Next steps:
+
+Replace 'http://localhost:3001/data' in the React component with the actual URL of your server's '/data' endpoint
+Use the MyComponent component in your React app
+Run your React app with npm start and ensure the chart is displaying the data correctly
+Continue developing your React dashboard.
+Next steps:
+??? 
+Run your server with node server.js (or whatever you named your file)
+Run your React application with npm start
+Check that the chart displays the data from your server
+Continue developing your React dashboard.
+
+
+... if we add a drop-down to select measuremetns, this could look like:
+
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+
+const MyComponent = () => {
+  const [data, setData] = useState([]);
+  const [measurements, setMeasurements] = useState([]);
+  const [selectedMeasurement, setSelectedMeasurement] = useState('');
+
+  useEffect(() => {
+    const fetchMeasurements = async () => {
+      const result = await axios.get('http://localhost:3001/measurements');
+      setMeasurements(result.data);
+    };
+
+    fetchMeasurements();
+  }, []);
+
+  useEffect(() => {
+    if (selectedMeasurement) {
+      const fetchData = async () => {
+        const result = await axios.get(`http://localhost:3001/data?measurement=${selectedMeasurement}`);
+        setData(result.data);
+      };
+
+      fetchData();
+    }
+  }, [selectedMeasurement]);
+
+  const handleMeasurementChange = (event) => {
+    setSelectedMeasurement(event.target.value);
+  };
+
+    return (
+    <div>
+      <select value={selectedMeasurement} onChange={handleMeasurementChange}>
+        {measurements.map((measurement) => (
+          <option key={measurement} value={measurement}>{measurement}</option>
+        ))}
+      </select>
+
+      <LineChart
+        width={500}
+        height={300}
+        data={data}
+        margin={{
+          top: 5, right: 30, left: 20, bottom: 5,
+        }}
+      >
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="name" />
+        <YAxis />
+        <Tooltip />
+        <Legend />
+        <Line type="monotone" dataKey={selectedMeasurement} stroke="#8884d8" activeDot={{ r: 8 }} />
+      </LineChart>
+    </div>
+  );
+};
+
+export default MyComponent;
+
+
+... with this change, the back-end would be updated as follows:
+
+const express = require('express');
+const { InfluxDB } = require('@influxdata/influxdb-client');
+
+const app = express();
+const port = 3001;
+
+const token = 'Your-InfluxDB-Token';
+const org = 'Your-InfluxDB-Org';
+const bucket = 'Your-InfluxDB-Bucket';
+
+const client = new InfluxDB({ url: 'http://localhost:8086', token: token });
+
+app.get('/measurements', async (req, res) => {
+  const queryApi = client.getQueryApi(org);
+  const fluxQuery = 'from(bucket: "' + bucket + '") |> distinct(column: "_measurement")';
+
+  try {
+    const result = await queryApi.collectRows(fluxQuery);
+    res.json(result.map(row => row._value));
+  } catch (error) {
+    console.error(`Error querying data from InfluxDB! ${error.stack}`);
+    res.status(500).send('Error querying data from InfluxDB!');
+  }
+});
+
+app.get('/data', async (req, res) => {
+  const measurement = req.query.measurement;
+  const queryApi = client.getQueryApi(org);
+  const fluxQuery = `from(bucket: "${bucket}") |> range(start: -1h) |> filter(fn: (r) => r._measurement == "${measurement}")`;
+
+  try {
+    const result = await queryApi.collectRows(fluxQuery);
+    res.json(result);
+  } catch (error) {
+    console.error(`Error querying data from InfluxDB! ${error.stack}`);
+    res.status(500).send('Error querying data from InfluxDB!');
+  }
+});
+
+app.listen(port, () => {
+  console.log(`Server running at http://localhost:${port}`);
+});
+
+Next steps:
+
+Replace 'Your-InfluxDB-Token', 'Your-InfluxDB-Org', and 'Your-InfluxDB-Bucket' in the server code with your actual InfluxDB token, organization, and bucket
+Run your server with node server.js (or whatever you named your file)
+Test the '/measurements' and '/data' endpoints with a tool like curl or Postman to ensure they're working correctly
+Continue developing your Node.js server and React dashboard.
+
+Backend package.json:
+
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "Backend server for the application",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.17.1",
+    "@influxdata/influxdb-client": "^1.18.0"
+  }
+}
+
+Frontend package.json:
+
+{
+  "name": "frontend",
+  "version": "1.0.0",
+  "description": "Frontend client for the application",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "dependencies": {
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2",
+    "react-scripts": "4.0.3",
+    "axios": "^0.21.1"
+  }
+}
+
+step-by-step guide to building your Node.js backend and React frontend application:
+
+Set up your project directories: Create separate directories for your backend and frontend code. For example, you might have a server directory for your backend and a client directory for your frontend.
+
+Initialize your Node.js backend:
+
+    Navigate to your server directory in your terminal.
+    Run npm init -y to create a package.json file with default values.
+    Install your backend dependencies by running npm install --save express @influxdata/influxdb-client.
+    Write your backend code: In your server directory, create a server.js file (or whatever you want to name your main server file). Write your Express server code in this file, as shown in your project notes.
+
+Start your backend server: Run node server.js in your terminal to start your server. You should see your server running at http://localhost:3001.
+
+Create your React frontend:
+
+    Navigate to your client directory in your terminal.
+    Run npx create-react-app . to create a new React app in the current directory.
+    Install your frontend dependencies by running npm install --save axios.
+    Write your frontend code: In your client/src directory, create your React components and write your frontend code, as shown in your project notes.
+
+Start your React app: Run npm start in your terminal to start your React app. You should see your app running at http://localhost:3000.
+
+Test your application: Use your browser to go to http://localhost:3000 and interact with your React app. It should make requests to your backend server, which should query data from your InfluxDB database and send it back to your React app.
+
+Next steps:
+
+    Follow the steps above to build your application
+    Test your application thoroughly to ensure it's working correctly
+    Commit and push your changes to your version control system regularly to keep it up-to-date.
+
+backend dependencies: express, influx
+
+
+For a basic prototype of your application, the main additional files you'll need are:
+
+Backend:
+
+package.json: This file is crucial for managing dependencies of your project. It should be automatically created when you run npm init in your backend directory.
+Frontend:
+
+    package.json: Similar to the backend, this file is created when you initialize your React app using create-react-app. It manages your frontend dependencies.
+    src/index.js: This is the main JavaScript file that renders your React app. It should import your MyComponent component and render it inside a ReactDOM.render() call.
+    public/index.html: This is the main HTML file for your React app. It includes a div with an id of root, which is where your React app gets rendered.
+
+Here's what src/index.js might look like:
+    import React from 'react';
+    import ReactDOM from 'react-dom';
+    import MyComponent from './MyComponent';
+
+    ReactDOM.render(
+    <React.StrictMode>
+        <MyComponent />
+    </React.StrictMode>,
+    document.getElementById('root')
+    );
+
+And here's what public/index.html might look like:
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>React App</title>
+    </head>
+    <body>
+        <div id="root"></div>
+    </body>
+    </html>
